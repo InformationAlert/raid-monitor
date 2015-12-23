@@ -111,7 +111,7 @@ class MDStat(object):
         message = ""
         for md in sorted(self.arrays):
             if ((self.arrays[md].status == Status.FAILED or
-                 self.arrays[md].status == Status.RECOVER) and
+                 self.arrays[md].status == Status.RECOVERING) and
                 self.arrays[md].failed_disk is not None):
                 failed_disk = "({})".format(self.arrays[md].failed_disk)
             else:
