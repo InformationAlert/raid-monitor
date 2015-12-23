@@ -45,6 +45,7 @@ unused devices: <none>
 """
 
 import argparse
+import enum
 import logging
 import os
 import pickle
@@ -55,7 +56,7 @@ import textwrap
 import time
 
 
-class Status(object):
+class Status(enum.Enum):
     """
     Possible RAID status values.
 
@@ -63,9 +64,16 @@ class Status(object):
     is reported first.
     """
     HEALTHY = 1
-    CHECK = 2
-    RECOVER = 3
-    FAILED = 4
+    CHECKING = 2
+    RESYNCING = 3
+    RECOVERING = 4
+    FAILED = 5
+
+    def __str__(self):
+        """
+        Just use the state's name as its string representation.
+        """
+        return self.name
 
 
 class RaidArray(object):
@@ -112,7 +120,7 @@ class MDStat(object):
                 "    {} ({}): {} {}\n".format(
                    md,
                    ' '.join(disk for disk in self.arrays[md].members),
-                   state_to_str(self.arrays[md].status),
+                   self.arrays[md].status,
                    failed_disk)
 
         return message
@@ -221,23 +229,6 @@ def send_status_email(subject, status_message, to_addresses):
         error("Failed to send status email: {}".format(err))
 
 
-def state_to_str(status):
-    """
-    Convert the status to a string for use in log and email messages.
-    """
-    if status == Status.HEALTHY:
-        status_str = "HEALTHY"
-    elif status == Status.FAILED:
-        status_str = "FAILED"
-    elif status == Status.RECOVER:
-        status_str = "RECOVERING"
-    elif status == Status.CHECK:
-        status_str = "CHECKING"
-    else:
-        error("Unrecognised status ({})".format(status))
-
-    return status_str
-
 #
 # General plan:
 #
@@ -284,6 +275,7 @@ def main():
     #  - Healthy
     #  - Failed
     #  - Rebuilding
+    #  - Resync
     #  - Checking
     # There may be servers with more than one array.
 
@@ -292,6 +284,7 @@ def main():
     single_disk_expr = re.compile(r'^(md\d) : active raid1 (sd\w\d)\[\d\].*$')
     disk_status_expr = re.compile(r'^\s+\d+ blocks.*\[(\d)\/2\] \[(U|_)(U|_)\]$')
     recovery_expr = re.compile(r'^\s+\[.*\]\s+recovery\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
+    resync_expr = re.compile(r'^\s+\[.*\]\s+resync\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
     check_expr = re.compile(r'^\s+\[.*\]\s+check\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
 
     with open(options.status_file, "r") as f:
@@ -300,6 +293,7 @@ def main():
             single_disk_match = re.match(single_disk_expr, line)
             disk_status_match = re.match(disk_status_expr, line)
             recovery_match = re.match(recovery_expr, line)
+            resync_match = re.match(resync_expr, line)
             check_match = re.match(check_expr, line)
 
             if double_disk_match:
@@ -329,12 +323,16 @@ def main():
                         mdstat.arrays[current_md].members[1]
 
             elif recovery_match:
-                # Mark the array as in RECOVER state.
-                mdstat.arrays[current_md].status = Status.RECOVER
+                # Mark the array as in RECOVERING state.
+                mdstat.arrays[current_md].status = Status.RECOVERING
+
+            elif resync_match:
+                # Mark the array as in RESYNCING state.
+                mdstat.arrays[current_md].status = Status.RESYNCING
 
             elif check_match:
-                # Mark the array as in CHECK state.
-                mdstat.arrays[current_md].status = Status.CHECK
+                # Mark the array as in CHECKING state.
+                mdstat.arrays[current_md].status = Status.CHECKING
 
 
     # Now compare the new state with the old state to determine if we need
@@ -364,7 +362,7 @@ def main():
         # Calculate old and new overall status
         old_status = old_mdstat.overall_status()
         overall_status = mdstat.overall_status()
-        subject += " ({})".format(state_to_str(overall_status))
+        subject += " ({})".format(overall_status)
 
         # Construct the pld and new state messages.
         old_state_message = old_mdstat.message()
@@ -380,9 +378,9 @@ def main():
 
            {}""").format(time.strftime('%b %d %H:%M:%S %Z'),
                          hostname,
-                         state_to_str(overall_status),
+                         overall_status,
                          new_state_message,
-                         state_to_str(old_status),
+                         old_status,
                          old_state_message)
 
         send_status_email(subject, message, options.status_email)
