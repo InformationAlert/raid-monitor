@@ -281,43 +281,51 @@ def main():
     # There may be servers with more than one array.
     
     # Regular expressions in the output that indicate status
-    expr1 = re.compile('^(md\d) : active raid1 (sd\w\d)\[\d\] (sd\w\d)\[\d\].*$')
-    expr2 = re.compile('^\s+\d+ blocks.*\[(\d)\/2\] \[(U|_)(U|_)\]$')
-    expr3 = re.compile('^\s+\[.*\]\s+recovery\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
-    expr4 = re.compile('^\s+\[.*\]\s+check\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
+    double_disk_expr = re.compile('^(md\d) : active raid1 (sd\w\d)\[\d\] (sd\w\d)\[\d\].*$')
+    single_disk_expr = re.compile('^(md\d) : active raid1 (sd\w\d)\[\d\].*$')
+    disk_status_expr = re.compile('^\s+\d+ blocks.*\[(\d)\/2\] \[(U|_)(U|_)\]$')
+    recovery_expr = re.compile('^\s+\[.*\]\s+recovery\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
+    check_expr = re.compile('^\s+\[.*\]\s+check\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
 
     with open(options.status_file, "r") as f:
         for line in f.readlines():
-            match1 = re.match(expr1, line)
-            match2 = re.match(expr2, line)
-            match3 = re.match(expr3, line)
-            match4 = re.match(expr4, line)
-            
-            if match1:
-                # Found a new MD device. Grab its name and members, and check
-                # if its setup has changed from the last run.
-                current_md = match1.groups()[0]
-                first_disk = match1.groups()[1]
-                second_disk = match1.groups()[2]
+            double_disk_match = re.match(double_disk_expr, line)
+            single_disk_match = re.match(single_disk_expr, line)
+            disk_status_match = re.match(disk_status_expr, line)
+            recovery_match = re.match(recovery_expr, line)
+            check_match = re.match(check_expr, line)
+
+            if double_disk_match:
+                # Found a new MD device. Grab its name and members.
+                current_md = double_disk_match.groups()[0]
+                first_disk = double_disk_match.groups()[1]
+                second_disk = double_disk_match.groups()[2]
                 mdstat.arrays[current_md] = RaidArray([first_disk,
                                                        second_disk])
 
-            elif match2 and '_' in match2.groups():
+            elif single_disk_match:
+                # Found a new MD device with just a single disk. Grab its name
+                # and members.
+                current_md = single_disk_match.groups()[0]
+                first_disk = single_disk_match.groups()[1]
+                mdstat.arrays[current_md] = RaidArray([first_disk])
+
+            elif disk_status_match and '_' in disk_status_match.groups():
                 # One of the disks in the array has failed. Mark this array
                 # as failed, and store the failed disk.
                 mdstat.arrays[current_md].status = Status.FAILED
-                if match2.groups()[1] == '_':
+                if disk_status_match.groups()[1] == '_':
                     mdstat.arrays[current_md].failed_disk = \
                         mdstat.arrays[current_md].members[0]
                 else:
                     mdstat.arrays[current_md].failed_disk = \
                         mdstat.arrays[current_md].members[1]
 
-            elif match3:
+            elif recovery_match:
                 # Mark the array as in RECOVER state.
                 mdstat.arrays[current_md].status = Status.RECOVER
 
-            elif match4:
+            elif check_match:
                 # Mark the array as in CHECK state.
                 mdstat.arrays[current_md].status = Status.CHECK
 
