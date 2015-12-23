@@ -3,18 +3,8 @@
 # Copyright (c) 2015 by Ensoft Ltd. All rights reserved.
 #
 
-import argparse
-import logging
-import os
-import pickle
-import re
-import subprocess
-import sys
-import textwrap
-import time
-
 """
-A script to monitor the health of a Linux server MD RAID array and report 
+A script to monitor the health of a Linux server MD RAID array and report
 when the status of the array has changed.
 
 This script will be run periodically by cron, and based on the state of the
@@ -27,18 +17,15 @@ An example of the crontab entry is given below, this:
 - sends status updates via email to Sysadmin
 
 From the server to be monitored:
-0,5,10,15,20,25,30,35,40,45,50,55 * * * * PATH=/usr/bin/:/bin/ /usr/bin/raid_monitor.py --status-file /proc/mdstat --logfile /var/log/raid_monitor.log --datafile /tmp/raid_status_monitor.dat --status-email sysadmin@localhost
-"""
+0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/bin/raid_monitor.py --status-email sysadmin@localhost
 
-#
-# The following shows example 'status file' contents that indicates four
-# raid devices with:
-#  - md0 being healthy [UU]
-#  - md1 having a failed disk [_U]
-#  - md2 being in recovery
-#  - md3 being checked
-#
-"""
+The following shows example 'status file' contents that indicates four
+raid devices with:
+ - md0 being healthy [UU]
+ - md1 having a failed disk [_U]
+ - md2 being in recovery
+ - md3 being checked
+
 Personalities : [raid1] [linear] [multipath] [raid0] [raid6] [raid5] [raid4] [raid10]
 md0 : active raid1 sdb0[1] sda0[0]
       1953512384 blocks [2/2] [UU]
@@ -57,8 +44,17 @@ md3 : active raid1 sda3[2] sdb3[1]
 unused devices: <none>
 """
 
+import argparse
+import logging
+import os
+import pickle
+import re
+import subprocess
+import sys
+import textwrap
+import time
 
-# Constants
+
 class Status(object):
     """
     Possible RAID status values.
@@ -70,7 +66,7 @@ class Status(object):
     CHECK = 2
     RECOVER = 3
     FAILED = 4
-    
+
 
 class RaidArray(object):
     """
@@ -90,6 +86,9 @@ class MDStat(object):
         self.arrays = {}
 
     def overall_status(self):
+        """
+        Query the overall status of the MD RAID.
+        """
         overall_status = Status.HEALTHY
         for md in self.arrays:
             # Store the worst (highest value) status.
@@ -98,11 +97,14 @@ class MDStat(object):
         return overall_status
 
     def message(self):
+        """
+        Get the full status message for all RAID arrays.
+        """
         message = ""
         for md in sorted(self.arrays):
             if ((self.arrays[md].status == Status.FAILED or
                  self.arrays[md].status == Status.RECOVER) and
-                 self.arrays[md].failed_disk is not None):
+                self.arrays[md].failed_disk is not None):
                 failed_disk = "({})".format(self.arrays[md].failed_disk)
             else:
                 failed_disk = ""
@@ -141,15 +143,15 @@ def log(log_str):
 def parse_args():
     """
     Parse the arguments given to the script.
-    
+
     Returns an 'options' object.
 
     The following options are supported:
      - status-file  - file name of status file (defaults to /proc/mdstat)
-     - logfile      - file name of the log file
-     - datafile     - file name of the data file
+     - logfile      - file name of the log file (defaults to /var/log/raid_monitor.log)
+     - datafile     - file name of the data file (defaults to /tmp/raid_status_monitor.dat)
      - status-email - email address(es) to send status emails to
-     - debug        - enable debugging 
+     - debug        - enable debugging
     """
     parser = argparse.ArgumentParser()
 
@@ -159,10 +161,11 @@ def parse_args():
                         help="file name of status file (e.g. /proc/mdstat)")
     parser.add_argument("--logfile",
                         dest="logfile",
+                        default="/var/log/raid_monitor.log",
                         help="file name of log file")
     parser.add_argument("--datafile",
                         dest="datafile",
-                        required=True,
+                        default="/tmp/raid_status_monitor.dat",
                         help="file name of data file")
     parser.add_argument("--status-email",
                         dest="status_email",
@@ -173,17 +176,17 @@ def parse_args():
                         action="store_true",
                         default=False,
                         help="Enable debugging")
-    
+
     args = parser.parse_args()
 
-    # The log and data file names must be specified - and the parent 
+    # The log and data file names must be specified - and the parent
     # directory must exist (if the file doesn't exist we'll create a new file)
     if not os.path.exists(os.path.dirname(os.path.abspath(args.datafile))):
         error("Must specify valid data file (specified '%s')" % (args.datafile))
 
     return args
 
-    
+
 def load_data_file(filename):
     """
     Return the data stored in the given file.
@@ -202,7 +205,7 @@ def load_data_file(filename):
 
     return data
 
-    
+
 def send_status_email(subject, status_message, to_addresses):
     """
     Send the updated status message to the given address(es).
@@ -246,6 +249,10 @@ def state_to_str(status):
 # 6. Store latest state
 #
 def main():
+    """
+    Main function. Check the options passed, query the RAID status, and send
+    a mail if required.
+    """
 
     options = parse_args()
     hostname = os.uname()[1]
@@ -271,7 +278,7 @@ def main():
 
     # Test the state of the RAID array
     #  - Read the contents of the status file
-    #  - Use regular expressions to parse the state 
+    #  - Use regular expressions to parse the state
     #
     # Potential states of each array are:
     #  - Healthy
@@ -279,13 +286,13 @@ def main():
     #  - Rebuilding
     #  - Checking
     # There may be servers with more than one array.
-    
+
     # Regular expressions in the output that indicate status
-    double_disk_expr = re.compile('^(md\d) : active raid1 (sd\w\d)\[\d\] (sd\w\d)\[\d\].*$')
-    single_disk_expr = re.compile('^(md\d) : active raid1 (sd\w\d)\[\d\].*$')
-    disk_status_expr = re.compile('^\s+\d+ blocks.*\[(\d)\/2\] \[(U|_)(U|_)\]$')
-    recovery_expr = re.compile('^\s+\[.*\]\s+recovery\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
-    check_expr = re.compile('^\s+\[.*\]\s+check\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
+    double_disk_expr = re.compile(r'^(md\d) : active raid1 (sd\w\d)\[\d\] (sd\w\d)\[\d\].*$')
+    single_disk_expr = re.compile(r'^(md\d) : active raid1 (sd\w\d)\[\d\].*$')
+    disk_status_expr = re.compile(r'^\s+\d+ blocks.*\[(\d)\/2\] \[(U|_)(U|_)\]$')
+    recovery_expr = re.compile(r'^\s+\[.*\]\s+recovery\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
+    check_expr = re.compile(r'^\s+\[.*\]\s+check\s+=\s+(\d+).(\d)%\s+\(\d+\/\d+\)\s+finish=(\d+).\dmin\s+speed=(\d+)K\/sec$')
 
     with open(options.status_file, "r") as f:
         for line in f.readlines():
@@ -362,7 +369,7 @@ def main():
         # Construct the pld and new state messages.
         old_state_message = old_mdstat.message()
         new_state_message = mdstat.message()
-        
+
         message = textwrap.dedent("""\
            At {} a RAID change occurred on {}.
 
