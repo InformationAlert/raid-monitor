@@ -100,7 +100,7 @@ class MDStat(object):
         overall_status = Status.HEALTHY
         for md in self.arrays:
             # Store the worst (highest value) status.
-            if self.arrays[md].status > overall_status:
+            if self.arrays[md].status.value > overall_status.value:
                 overall_status = self.arrays[md].status
         return overall_status
 
