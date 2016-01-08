@@ -1,0 +1,2 @@
+# Example cronjob for raid-monitor to use
+# 0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/bin/raid_monitor.py --status-email root@localhost
