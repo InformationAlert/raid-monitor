@@ -1,0 +1,12 @@
+Source: raid-monitor
+Maintainer: Lawrence Troup <lawrencetroup@gmail.com>
+Section: misc
+Priority: optional
+Build-Depends: debhelper (>= 7.0.50-),python3
+Standards-Version: 3.9.5
+
+Package: raid-monitor
+Architecture: all
+Depends: python3,python-support,${misc:Depends}
+Description: RAID monitor package
+ This package contains the RAID monitor script
