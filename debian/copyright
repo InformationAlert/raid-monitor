@@ -1,0 +1,5 @@
+This is the Debian package for the raid-monitor script to
+monitor the RAID status on Unix systems.
+
+Copyright 2016, Ensoft Ltd.
+All rights reserved.

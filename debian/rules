@@ -1,0 +1,6 @@
+#!/usr/bin/make -f
+
+WITH_PYTHON2 = $(shell test -f /usr/bin/dh_python3 && echo "--with python3")
+
+%:
+	dh ${WITH_PYTHON3} $@
