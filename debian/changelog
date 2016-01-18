@@ -1,3 +1,9 @@
+raid-monitor (1.0.1) trusty; urgency=medium
+
+  * Increase the version number for released version.
+
+ -- Lawrence Troup <lawrencetroup@gmail.com>  Mon, 18 Jan 2016 12:18:34 +0000
+
 raid-monitor (1.0.0) trusty; urgency=medium
 
   * Initial release.
